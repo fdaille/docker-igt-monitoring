@@ -1,0 +1,72 @@
+version: "3.8"
+
+services:
+  influxdb:
+    image: influxdb
+    container_name: influxdb
+    restart: always
+    networks:
+      - traefik_dmz
+    env_file:
+      - .env
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    labels:
+      - "traefik.http.routers.influxdb-ssl.entryPoints=influxdb-port"
+      - "traefik.http.routers.influxdb-ssl.rule=host(`$SERVER_FQDN`)"
+      - "traefik.http.routers.influxdb-ssl.tls=true"
+      - "traefik.http.routers.influxdb-ssl.service=influxdb-ssl"
+      - "traefik.http.services.influxdb-ssl.loadBalancer.server.port=8086"
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    restart: always
+    depends_on:
+      - influxdb
+    networks:
+      - traefik_dmz
+    env_file:
+      - .env
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    labels:
+      - "traefik.http.routers.grafana-ssl.entryPoints=web443"
+      - "traefik.http.routers.grafana-ssl.rule=host(`$SERVER_FQDN`)"
+      - "traefik.http.routers.grafana-ssl.tls=true"
+      - "traefik.http.routers.grafana-ssl.service=grafana-ssl"
+      - "traefik.http.services.grafana-ssl.loadBalancer.server.port=3000"
+
+  traefik:
+    container_name: traefik
+    image: traefik:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log/vdi-monitoring:/logs
+    ports:
+      - 443:443
+      - 8086:8086
+    depends_on:
+      - influxdb
+    networks:
+      - traefik_dmz
+    command:
+      - "--providers.docker=true"
+      - "--entryPoints.web443.address=:443"
+      - "--entryPoints.influxdb-port.address=:8086"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/logs/access.log"
+      - "--accesslog.bufferingsize=100"
+
+networks:
+  traefik_dmz:
+    driver: bridge
+
+
+volumes:
+  influxdb-data:
+    external: false
+
+  grafana-data:
+    external: false
